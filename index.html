@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Smart Study Monitor PRO</title>
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 18px;
+  background: #101827;
+  color: #edf3ff;
+  font-family: Arial, sans-serif;
+}
+
+.container {
+  max-width: 1100px;
+  margin: auto;
+}
+
+h1 {
+  text-align: center;
+  color: #7db4ff;
+}
+
+h2 { color: #9bc5ff; }
+
+.card {
+  background: #1b2940;
+  padding: 18px;
+  border: 1px solid #344761;
+  border-radius: 14px;
+  margin: 16px 0;
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+  background: #05080d;
+  border-radius: 12px;
+  overflow: hidden;
+  line-height: 0;
+}
+
+video {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.live-status {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  line-height: normal;
+  pointer-events: none;
+}
+
+.tag {
+  background: #111d30e8;
+  color: white;
+  padding: 8px 11px;
+  border-radius: 7px;
+  font-size: 12px;
+  border: 1px solid #536987;
+}
+
+button {
+  background: #2868e8;
+  color: white;
+  border: 0;
+  padding: 12px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  margin: 5px;
+  font-size: 14px;
+}
+
+button.stop { background: #c73543; }
+button.green { background: #168c66; }
+
+.status {
+  background: #263b58;
+  border-radius: 8px;
+  padding: 11px;
+  margin-top: 9px;
+  line-height: 1.5;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(210px,1fr));
+  gap: 10px;
+}
+
+.big {
+  font-size: 34px;
+  font-weight: bold;
+  color: #8dbbff;
+}
+
+input {
+  padding: 9px;
+  border-radius: 7px;
+  max-width: 100%;
+}
+
+.alert {
+  background: #33425c;
+  border-left: 4px solid #ffb84d;
+  border-radius: 7px;
+  padding: 10px;
+  margin: 8px 0;
+  line-height: 1.5;
+}
+
+.small {
+  font-size: 12px;
+  color: #b8c9df;
+}
+
+.good { color: #69e6a5; }
+.warn { color: #ffd078; }
+</style>
+</head>
+
+<body>
+<div class="container">
+
+<h1>AI SMART STUDY MONITOR PRO</h1>
+<p class="small" style="text-align:center">
+Live Face • Eye • Phone • Book Detection
+</p>
+
+<div class="card">
+<h2>LIVE AI CAMERA</h2>
+
+<div class="stage">
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+
+  <div class="live-status">
+    <span class="tag" id="faceTag">FACE: WAITING</span>
+    <span class="tag" id="eyeTag">EYES: WAITING</span>
+    <span class="tag" id="phoneTag">PHONE: WAITING</span>
+    <span class="tag" id="bookTag">BOOK: WAITING</span>
+  </div>
+</div>
+
+<button onclick="startSystem()">START AI CAMERA</button>
+<button class="stop" onclick="stopSystem()">STOP CAMERA</button>
+
+<div class="status" id="systemStatus">
+AI system is OFF.
+</div>
+
+<div class="grid">
+  <div class="status" id="faceStatus">Face: Waiting</div>
+  <div class="status" id="eyeStatus">Eyes: Waiting</div>
+  <div class="status" id="phoneStatus">Phone: Waiting</div>
+  <div class="status" id="bookStatus">Book: Waiting</div>
+</div>
+</div>
+
+<div class="card">
+<h2>STUDY TIMER</h2>
+<div class="big" id="timer">00:00:00</div>
+
+<button onclick="startStudy()">START STUDY</button>
+<button class="stop" onclick="pauseTimer()">PAUSE</button>
+<button class="green" onclick="startBreak()">START BREAK</button>
+
+<p id="timerStatus">Not started</p>
+
+<label>Daily goal in minutes</label>
+<input type="number" id="goal" value="120" min="1">
+</div>
+
+<div class="card">
+<h2>VOICE ALERT SETTINGS</h2>
+<p class="small">
+Upload separate audio files for individual alerts.
+Without an uploaded file, browser voice will be used.
+</p>
+
+<div id="audioInputs" class="grid"></div>
+</div>
+
+<div class="card">
+<h2>LIVE ALERTS</h2>
+<div id="alerts">No alerts yet.</div>
+<button onclick="testAlert()">TEST AUDIO</button>
+</div>
+
+<div class="card">
+<h2>DAILY REPORT</h2>
+<p id="studyReport">Study: 0 minutes</p>
+<p id="breakReport">Break: 0 minutes</p>
+<p id="alertReport">Alerts: 0</p>
+<p id="goalReport">Goal: 0%</p>
+<button onclick="showReport()">UPDATE REPORT</button>
+</div>
+
+<p class="small">
+Privacy: Camera processing runs in this browser. No video recording or upload is performed by this app. Camera monitoring stops when you press Stop.
+</p>
+
+</div>
+
+<script type="module">
+
+import {
+  FilesetResolver,
+  FaceLandmarker,
+  ObjectDetector
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const video = document.getElementById("video");
+const canvas = document.getElementById("overlay");
+const ctx = canvas.getContext("2d");
+
+const FACE_MODEL =
+"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+
+const OBJECT_MODEL =
+"https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite";
+
+const WASM =
+"https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+
+let stream = null;
+let faceModel = null;
+let objectModel = null;
+let running = false;
+let loading = false;
+
+let lastFaceTime = 0;
+let lastObjectTime = 0;
+let lastVideoTime = -1;
+
+let faceResult = null;
+let objectResult = null;
+let latestDetections = [];
+let noFaceSince = null;
+let eyesClosedSince = null;
+
+let lastAlert = {};
+let alertCount = 0;
+
+let studySeconds = 0;
+let breakSeconds = 0;
+let timerInterval = null;
+let mode = "stopped";
+
+let lastActivity = Date.now();
+let lastInactiveAlert = 0;
+
+
+const audioFiles = {
+  face: "face.mpeg",
+  faceBack: "face.mpeg",
+  eyes: "eye.mpeg",
+  eye: "eye.mpeg",
+  phone: "mobile.mpeg",
+  book: "ias.mpeg",
+  inactive: "face.mpeg",
+  tab: "face.mpeg"
+};
+
+
+const messages = {
+  face: "We cannot see your face",
+  faceBack: "Thank you! Continue studying",
+  eyes: "Please keep your eyes open",
+  phone: "Please keep your phone away",
+  book: "Keep your eyes visible",
+  inactive: "Are you still studying?",
+  tab: "Please return to your study tab"
+};
+
+// Audio file controls
+const audioNames = {
+  face: "Face missing",
+  eyes: "Eyes closed",
+  phone: "Phone detected",
+  book: "Book covering eyes",
+  inactive: "Inactivity",
+  tab: "Tab changed"
+};
+
+const audioInputs = document.getElementById("audioInputs");
+
+for (const key of Object.keys(audioNames)) {
+  const div = document.createElement("div");
+  const label = document.createElement("label");
+  label.textContent = audioNames[key];
+
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "audio/*";
+
+  input.onchange = () => {
+    if (input.files[0]) {
+      if (audioFiles[key]) URL.revokeObjectURL(audioFiles[key]);
+      audioFiles[key] = URL.createObjectURL(input.files[0]);
+    }
+  };
+
+  div.append(label, document.createElement("br"), input);
+  audioInputs.appendChild(div);
+}
+
+
+
+// Alert cooldown
+function alertUser(key, message, cooldown = 12000) {
+  const now = Date.now();
+
+  if (now - (lastAlert[key] || 0) < cooldown) return;
+
+  lastAlert[key] = now;
+  alertCount++;
+
+  const item = document.createElement("div");
+  item.className = "alert";
+  item.textContent =
+    new Date().toLocaleTimeString() + " — " + message;
+
+  const alerts = document.getElementById("alerts");
+  alerts.prepend(item);
+
+  if (alerts.children.length > 30) {
+    alerts.lastElementChild.remove();
+  }
+
+  if (audioFiles[key]) {
+    const audio = new Audio(audioFiles[key]);
+    audio.play().catch(() => speak(message));
+  } else {
+    speak(message);
+  }
+}
+
+
+function speak(message) {
+  const audioFiles = {
+    eye: "eye.mpeg",
+    book: "ias.mpeg",
+    phone: "mobile.mpeg",
+    face: "face.mpeg"
+  };
+
+  let file = "face.mpeg";
+
+  if (message.toLowerCase().includes("eye")) {
+    file = audioFiles.eye;
+  } else if (message.toLowerCase().includes("book")) {
+    file = audioFiles.book;
+  } else if (message.toLowerCase().includes("phone") ||
+             message.toLowerCase().includes("mobile")) {
+    file = audioFiles.phone;
+  }
+
+  const audio = new Audio(file);
+  audio.play().catch(error => {
+    console.error("Audio playback error:", error);
+  });
+}
+
+
+// Create AI models once and reuse them
+async function loadModels() {
+  if (faceModel && objectModel) return;
+
+  document.getElementById("systemStatus").textContent =
+    "Loading MediaPipe AI models. Please wait...";
+
+  const vision = await FilesetResolver.forVisionTasks(WASM);
+
+  if (!faceModel) {
+    document.getElementById("systemStatus").textContent =
+      "Loading face and eye tracking model...";
+
+    faceModel = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: FACE_MODEL,
+        delegate: "CPU"
+      },
+      runningMode: "VIDEO",
+      numFaces: 1,
+      outputFaceBlendshapes: false,
+      minFaceDetectionConfidence: 0.5,
+      minFacePresenceConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+  }
+
+  if (!objectModel) {
+    document.getElementById("systemStatus").textContent =
+      "Loading mobile and book detection model...";
+
+   
+const objectOptions = {
+  baseOptions: {
+    modelAssetPath: OBJECT_MODEL,
+    delegate: "GPU"
+  },
+  runningMode: "VIDEO",
+  scoreThreshold: 0.35,
+  maxResults: 5
+};
+
+try {
+  objectModel = await ObjectDetector.createFromOptions(
+    vision,
+    objectOptions
+  );
+
+  console.log("Object detection: GPU enabled");
+
+} catch (gpuError) {
+  console.warn("GPU unavailable, using CPU:", gpuError);
+
+  objectOptions.baseOptions.delegate = "CPU";
+
+  objectModel = await ObjectDetector.createFromOptions(
+    vision,
+    objectOptions
+  );
+
+  console.log("Object detection: CPU enabled");
+}
+
+  }
+}
+
+// Camera
+async function startSystem() {
+  if (running || loading) return;
+
+  loading = true;
+
+  try {
+    document.getElementById("systemStatus").textContent =
+      "Requesting camera permission...";
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+  facingMode: "user",
+  width: { ideal: 640 },
+  height: { ideal: 480 },
+  frameRate: { ideal: 24, max: 30 }
+}
+    });
+
+    video.srcObject = stream;
+    await video.play();
+
+    await loadModels();
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    running = true;
+    lastVideoTime = -1;
+    lastFaceTime = 0;
+    lastObjectTime = 0;
+
+    document.getElementById("systemStatus").textContent =
+      "AI monitoring is LIVE.";
+
+    speak("AI study monitoring started.");
+
+    requestAnimationFrame(detectLoop);
+
+  } catch (error) {
+    console.error(error);
+
+    document.getElementById("systemStatus").textContent =
+      "AI error: " + error.message +
+      ". Check internet and model loading.";
+
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+      stream = null;
+    }
+
+    video.srcObject = null;
+
+  } finally {
+    loading = false;
+  }
+}
+
+// Eye aspect ratio
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function eyeRatio(p, ids) {
+  const [a,b,c,d,e,f] = ids.map(i => p[i]);
+
+  return (
+    dist(b,f) + dist(c,e)
+  ) / (
+    2 * Math.max(dist(a,d), 0.0001)
+  );
+}
+
+function inside(point, box) {
+  return point.x * canvas.width >= box.originX &&
+    point.x * canvas.width <= box.originX + box.width &&
+    point.y * canvas.height >= box.originY &&
+    point.y * canvas.height <= box.originY + box.height;
+}
+
+// Draw box and label
+function drawBox(x,y,w,h,label,color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(x,y,w,h);
+
+  ctx.font = "bold 16px Arial";
+
+  const textWidth = ctx.measureText(label).width;
+  const labelY = Math.max(22,y-8);
+
+  ctx.fillStyle = color;
+  ctx.fillRect(x,labelY-19,textWidth+14,25);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(label,x+7,labelY);
+}
+
+// Face drawing and eye monitoring
+function processFace(result, now) {
+  const faces = result.faceLandmarks || [];
+
+  if (!faces.length) {
+    if (noFaceSince === null) noFaceSince = now;
+
+    document.getElementById("faceTag").textContent =
+      "FACE: NOT DETECTED";
+
+    document.getElementById("faceStatus").textContent =
+      "Face not detected";
+
+    document.getElementById("eyeTag").textContent =
+      "EYES: UNKNOWN";
+
+    document.getElementById("eyeStatus").textContent =
+      "Eyes not visible";
+
+    if (now - noFaceSince > 4000) {
+      alertUser("face", messages.face);
+    }
+
+    eyesClosedSince = null;
+    return;
+  }
+
+  if (noFaceSince !== null) {
+    alertUser("faceBack", messages.faceBack, 0);
+  }
+
+  noFaceSince = null;
+
+  const p = faces[0];
+
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+
+  for (const point of p) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+
+  const x = minX * canvas.width;
+  const y = minY * canvas.height;
+  const w = (maxX-minX) * canvas.width;
+  const h = (maxY-minY) * canvas.height;
+
+  drawBox(x,y,w,h,"FACE DETECTED","#159f76");
+
+  document.getElementById("faceTag").textContent =
+    "FACE: DETECTED";
+
+  document.getElementById("faceStatus").textContent =
+    "Face detected and tracked";
+
+  // Eye landmarks
+  const leftEye = eyeRatio(p,[33,160,158,133,153,144]);
+  const rightEye = eyeRatio(p,[362,385,387,263,373,380]);
+
+  const average = (leftEye+rightEye)/2;
+
+  for (const index of [33,133,263,362]) {
+    const point = p[index];
+
+    ctx.beginPath();
+    ctx.arc(
+      point.x*canvas.width,
+      point.y*canvas.height,
+      4,0,Math.PI*2
+    );
+
+    ctx.fillStyle = "#ffda55";
+    ctx.fill();
+  }
+
+  if (average < 0.18) {
+    if (eyesClosedSince === null) eyesClosedSince = now;
+
+    document.getElementById("eyeTag").textContent =
+      "EYES: POSSIBLY CLOSED";
+
+    document.getElementById("eyeStatus").textContent =
+      "Eyes may be closed";
+
+    if (now-eyesClosedSince > 2000) {
+      alertUser("eyes",messages.eyes);
+    }
+
+  } else {
+    eyesClosedSince = null;
+
+    document.getElementById("eyeTag").textContent =
+      "EYES: OPEN";
+
+    document.getElementById("eyeStatus").textContent =
+      "Eyes appear open";
+  }
+
+  window.currentEyes = [p[33],p[263]];
+}
+
+// Object detection
+function processObjects(result,now) {
+  const detections = result.detections || [];
+
+  let phoneFound = false;
+  let bookFound = false;
+  let bookCoversEyes = false;
+
+  for (const detection of detections) {
+    const category = detection.categories?.[0];
+    if (!category) continue;
+
+    const name = category.categoryName.toLowerCase();
+    const score = category.score || 0;
+
+    if (score < 0.40) continue;
+
+    const box = detection.boundingBox;
+
+    const isPhone =
+      name.includes("cell phone") ||
+      name.includes("mobile phone");
+
+    const isBook = name === "book";
+
+    if (!isPhone && !isBook) continue;
+
+    const label = isPhone
+      ? "MOBILE " + Math.round(score*100) + "%"
+      : "BOOK " + Math.round(score*100) + "%";
+
+    drawBox(
+      box.originX,
+      box.originY,
+      box.width,
+      box.height,
+      label,
+      isPhone ? "#ff5252" : "#ffb52e"
+    );
+
+    if (isPhone) phoneFound = true;
+
+    if (isBook) {
+      bookFound = true;
+
+      if (window.currentEyes) {
+        const eye1 = inside(window.currentEyes[0],box);
+        const eye2 = inside(window.currentEyes[1],box);
+
+        if (eye1 || eye2) bookCoversEyes = true;
+      }
+    }
+  }
+
+  document.getElementById("phoneTag").textContent =
+    phoneFound ? "PHONE: DETECTED" : "PHONE: NOT SEEN";
+
+  document.getElementById("bookTag").textContent =
+    bookFound ? "BOOK: DETECTED" : "BOOK: NOT SEEN";
+
+  document.getElementById("phoneStatus").textContent =
+    phoneFound ? "Mobile detected in camera" : "No mobile detected";
+
+  document.getElementById("bookStatus").textContent =
+    bookFound ? "Book detected in camera" : "No book detected";
+
+  if (phoneFound) {
+    alertUser("phone",messages.phone);
+  }
+
+  if (bookCoversEyes) {
+    alertUser("book",messages.book);
+    document.getElementById("bookStatus").textContent =
+      "Warning: Book overlaps eye position";
+  }
+}
+function drawLatestObjects() {
+  for (const detection of latestDetections) {
+    const category = detection.categories?.[0];
+    if (!category || category.score < 0.25) continue;
+
+    const name = category.categoryName.toLowerCase();
+
+    const isPhone =
+      name.includes("cell phone") ||
+      name.includes("mobile phone");
+
+    const isBook = name === "book";
+
+    if (!isPhone && !isBook) continue;
+
+    const b = detection.boundingBox;
+
+    drawBox(
+      b.originX,
+      b.originY,
+      b.width,
+      b.height,
+      (isPhone ? "MOBILE DETECTED " : "BOOK DETECTED ") +
+        Math.round(category.score * 100) + "%",
+      isPhone ? "#ff3333" : "#ffb52e"
+    );
+  }
+}
+// Main live loop
+function detectLoop() {
+  if (!running) return;
+
+  if (video.readyState >= 2 &&
+      video.currentTime !== lastVideoTime) {
+
+    lastVideoTime = video.currentTime;
+
+    const now = performance.now();
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+drawLatestObjects();
+    // Face tracking every 120ms
+    if (now-lastFaceTime > 120) {
+      lastFaceTime = now;
+
+      try {
+        faceResult = faceModel.detectForVideo(video,now);
+        processFace(faceResult,now);
+      } catch (error) {
+        console.error("Face detection:",error);
+      }
+    }
+
+    // Object detection every 650ms
+    if (now-lastObjectTime > 350) {
+      lastObjectTime = now;
+
+      try {
+        objectResult = objectModel.detectForVideo(video,now);
+        processObjects(objectResult,now);
+      } catch (error) {
+        console.error("Object detection:",error);
+      }
+    }
+
+    // Draw last known object boxes between detection runs
+    if (objectResult && now-lastObjectTime < 1000) {
+      // The next object detection updates the overlay.
+    }
+  }
+
+  requestAnimationFrame(detectLoop);
+}
+
+// Stop camera
+function stopSystem() {
+  running = false;
+
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+
+  video.srcObject = null;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  faceResult = null;
+  objectResult = null;
+  window.currentEyes = null;
+
+  document.getElementById("systemStatus").textContent =
+    "Camera stopped.";
+
+  document.getElementById("faceTag").textContent = "FACE: OFF";
+  document.getElementById("eyeTag").textContent = "EYES: OFF";
+  document.getElementById("phoneTag").textContent = "PHONE: OFF";
+  document.getElementById("bookTag").textContent = "BOOK: OFF";
+}
+
+// Study timer
+function startStudy() {
+  clearInterval(timerInterval);
+  mode = "study";
+
+  document.getElementById("timerStatus").textContent =
+    "Study session running";
+
+  timerInterval = setInterval(() => {
+    studySeconds++;
+    updateTimer();
+  },1000);
+
+  speak("Study started");
+}
+
+function startBreak() {
+  clearInterval(timerInterval);
+  mode = "break";
+
+  document.getElementById("timerStatus").textContent =
+    "Break time running";
+
+  timerInterval = setInterval(() => {
+    breakSeconds++;
+    updateTimer();
+  },1000);
+
+  speak("Break started");
+}
+
+function pauseTimer() {
+  clearInterval(timerInterval);
+  mode = "stopped";
+
+  document.getElementById("timerStatus").textContent =
+    "Timer paused";
+
+  updateTimer();
+}
+
+function updateTimer() {
+  const seconds = mode === "break"
+    ? breakSeconds : studySeconds;
+
+  const h = Math.floor(seconds/3600);
+  const m = Math.floor((seconds%3600)/60);
+  const s = seconds%60;
+
+  document.getElementById("timer").textContent =
+    [h,m,s].map(n=>String(n).padStart(2,"0")).join(":");
+}
+
+// Activity tracking on this study page
+function activity() {
+  lastActivity = Date.now();
+}
+
+["mousemove","keydown","click","scroll","touchstart"].forEach(event => {
+  document.addEventListener(event,activity,{passive:true});
+});
+
+// Inactivity reminder
+setInterval(() => {
+  const now = Date.now();
+
+  if (
+    mode === "study" &&
+    !document.hidden &&
+    now-lastActivity > 120000 &&
+    now-lastInactiveAlert > 120000
+  ) {
+    alertUser("inactive",messages.inactive);
+    lastInactiveAlert = now;
+  }
+},10000);
+
+// Tab change
+document.addEventListener("visibilitychange",() => {
+  if (document.hidden && mode === "study") {
+    alertUser("tab",messages.tab,0);
+  }
+});
+
+// Report
+function showReport() {
+  const study = Math.floor(studySeconds/60);
+  const breaks = Math.floor(breakSeconds/60);
+  const goal = Math.max(
+    1,Number(document.getElementById("goal").value)||120
+  );
+
+  const progress = Math.min(100,Math.round(study/goal*100));
+
+  document.getElementById("studyReport").textContent =
+    "Study: "+study+" minutes";
+
+  document.getElementById("breakReport").textContent =
+    "Break: "+breaks+" minutes";
+
+  document.getElementById("alertReport").textContent =
+    "Alerts: "+alertCount;
+
+  document.getElementById("goalReport").textContent =
+    "Goal progress: "+progress+"%";
+}
+
+function testAlert() {
+  speak("Smart Study Monitor audio test");
+}
+
+updateTimer();
+
+// Connect HTML buttons to JavaScript functions
+window.startSystem = startSystem;
+window.stopSystem = stopSystem;
+window.startStudy = startStudy;
+window.pauseTimer = pauseTimer;
+window.startBreak = startBreak;
+window.showReport = showReport;
+window.testAlert = testAlert;
+</script>
+</body>
+</html>
